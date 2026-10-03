@@ -5,6 +5,7 @@ import * as store from './store.js';
 import { h } from './ui.js';
 import { renderLogin, renderSetup, renderUnlock, seedDefaults } from './views/auth.js';
 import { mountShell, unmountShell } from './shell.js';
+import { setFileContext, clearFileContext } from './files.js';
 
 let root;
 let session = 0;
@@ -19,6 +20,7 @@ export function start(rootEl) {
     const my = ++session;
     unmountShell();
     store.stop();
+    clearFileContext();
     if (!user) {
       renderLogin(root);
       return;
@@ -65,6 +67,7 @@ async function openVault(user, my) {
 
 function enterApp(user, key, my, opts = {}) {
   store.start(user.uid, key);
+  setFileContext(user.uid, key);
   if (opts.seed) seedDefaults(store, opts.name);
   mountShell(root, {
     user,
@@ -72,6 +75,7 @@ function enterApp(user, key, my, opts = {}) {
       await vault.forget(user.uid);
       unmountShell();
       store.stop();
+      clearFileContext();
       if (my === session) openVault(user, my);
     },
     logout: async () => {
