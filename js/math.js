@@ -117,7 +117,7 @@ export function monthLabel(ym, long = false) {
 export function monthTotals(buchungen, ym) {
   let ein = 0, aus = 0;
   for (const b of buchungen) {
-    if (!b.datum || monthKey(b.datum) !== ym) continue;
+    if (b.storniert || !b.datum || monthKey(b.datum) !== ym) continue;
     const betrag = Math.abs(Number(b.betrag) || 0);
     if (b.typ === 'einnahme') ein += betrag; else aus += betrag;
   }
@@ -127,7 +127,7 @@ export function monthTotals(buchungen, ym) {
 export function categoryBreakdown(buchungen, ym, typ = 'ausgabe') {
   const map = new Map();
   for (const b of buchungen) {
-    if (!b.datum || monthKey(b.datum) !== ym || b.typ !== typ) continue;
+    if (b.storniert || !b.datum || monthKey(b.datum) !== ym || b.typ !== typ) continue;
     const k = b.kategorie || 'Sonstiges';
     map.set(k, (map.get(k) || 0) + Math.abs(Number(b.betrag) || 0));
   }
@@ -156,6 +156,7 @@ export function summarize({ bereiche, eintraege, buchungen, fristen }, today = t
   const kommende = [];
   const alleFristen = [];
   let fixkosten = 0, fixeinnahmen = 0, vermoegen = 0;
+  const deltas = kontoDeltas(eintraege, buchungen);
 
   for (const e of eintraege) {
     const b = byId.get(e.bereichId);
@@ -170,10 +171,11 @@ export function summarize({ bereiche, eintraege, buchungen, fristen }, today = t
     pb.einnahmenMonat = round2(pb.einnahmenMonat + me);
     fixkosten += mk;
     fixeinnahmen += me;
-    if (facts.saldo !== null) {
-      vermoegen += facts.saldo;
-      pb.saldo = round2(pb.saldo + facts.saldo);
-      konten.push({ id: e.id, bereichId: b.id, titel, saldo: facts.saldo });
+    if (facts.saldo !== null || deltas.has(e.id)) {
+      const saldo = round2((facts.saldo || 0) + (deltas.get(e.id) || 0));
+      vermoegen += saldo;
+      pb.saldo = round2(pb.saldo + saldo);
+      konten.push({ id: e.id, bereichId: b.id, titel, saldo });
     }
     if (facts.faellig && (facts.kosten || facts.einnahme)) {
       const datum = nextOccurrence(facts.faellig, facts.intervall, today);
@@ -231,4 +233,127 @@ export function summarize({ bereiche, eintraege, buchungen, fristen }, today = t
     letzterMonat,
     monatsVeraenderung: round2(dieserMonat.saldo - letzterMonat.saldo)
   };
+}
+
+// ---------- Konten & Buchungen ----------
+
+export function hasRole(bereich, role) {
+  return (bereich?.fields || []).some(f => f.role === role);
+}
+
+export function saldoFieldId(bereich) {
+  const f = (bereich?.fields || []).find(x => x.type === 'betrag' && x.role === 'saldo');
+  return f ? f.id : null;
+}
+
+// Wie stark sich jedes Konto durch Buchungen verändert hat – nur Buchungen NACH dem
+// letzten manuell eingetragenen Kontostand zählen (sonst würde doppelt gerechnet).
+export function kontoDeltas(eintraege, buchungen) {
+  const basis = new Map(eintraege.map(e => [e.id, String(e.saldoGesetztAm || '')]));
+  const out = new Map();
+  for (const b of buchungen) {
+    if (b.storniert || !b.kontoId || !basis.has(b.kontoId)) continue;
+    if (String(b.createdAt || '') <= basis.get(b.kontoId)) continue;
+    const betrag = Math.abs(Number(b.betrag) || 0);
+    out.set(b.kontoId, round2((out.get(b.kontoId) || 0) + (b.typ === 'einnahme' ? betrag : -betrag)));
+  }
+  return out;
+}
+
+// Alle Konten (Einträge in Bereichen mit einem Kontostand-Feld) mit aktuellem Stand.
+export function kontoListe(bereiche, eintraege, buchungen) {
+  const deltas = kontoDeltas(eintraege, buchungen);
+  const out = [];
+  for (const b of bereiche) {
+    if (!hasRole(b, 'saldo')) continue;
+    for (const e of eintraege) {
+      if (e.bereichId !== b.id) continue;
+      const f = entryFacts(b, e);
+      out.push({ id: e.id, bereichId: b.id, titel: entryTitle(b, e), saldo: round2((f.saldo || 0) + (deltas.get(e.id) || 0)) });
+    }
+  }
+  return out.sort((a, b) => a.titel.localeCompare(b.titel, 'de'));
+}
+
+// Alle Termine einer Zahlung zwischen from und to (inklusive), höchstens max Stück.
+export function occurrencesBetween(anchor, interval, from, to, max = 60) {
+  if (!isISODate(anchor) || from > to) return [];
+  const out = [];
+  if (interval === 'einmalig') return anchor >= from && anchor <= to ? [anchor] : [];
+  if (interval === 'woechentlich') {
+    let d = nextOccurrence(anchor, 'woechentlich', from);
+    while (d && d <= to && out.length < max) { out.push(d); d = addDays(d, 7); }
+    return out;
+  }
+  const step = MONTH_STEP[interval] || 1;
+  for (let k = 0; k <= 2400 && out.length < max; k++) {
+    const d = addMonths(anchor, k * step);
+    if (d > to) break;
+    if (d >= from) out.push(d);
+  }
+  return out;
+}
+
+// Welche automatischen Abbuchungen fällig sind und noch fehlen.
+// Die ID ist eindeutig pro Vertrag und Datum – so entsteht auch auf mehreren Geräten nie eine doppelte Buchung.
+export function faelligeAutoBuchungen(bereiche, eintraege, vorhandeneIds, today) {
+  const byId = new Map(bereiche.map(b => [b.id, b]));
+  const out = [];
+  for (const e of eintraege) {
+    if (!e.kontoId || !e.autoAb || !isISODate(e.autoAb)) continue;
+    const b = byId.get(e.bereichId);
+    if (!b) continue;
+    const f = entryFacts(b, e);
+    const netto = round2(f.einnahme - f.kosten);
+    if (!netto || !f.faellig) continue;
+    for (const datum of occurrencesBetween(f.faellig, f.intervall, e.autoAb, today, 24)) {
+      const id = `auto_${e.id}_${datum}`;
+      if (vorhandeneIds.has(id)) continue;
+      out.push({
+        id,
+        data: {
+          typ: netto < 0 ? 'ausgabe' : 'einnahme',
+          betrag: Math.abs(netto),
+          datum,
+          kategorie: b.name,
+          notiz: entryTitle(b, e),
+          kontoId: e.kontoId,
+          eintragId: e.id,
+          auto: true
+        }
+      });
+    }
+  }
+  return out;
+}
+
+// Termine pro Tag für den Kalender (Fristen, Zahlungen, Notizen) im Zeitraum.
+export function kalenderEreignisse({ bereiche, eintraege, fristen, notizen }, from, to) {
+  const byId = new Map(bereiche.map(b => [b.id, b]));
+  const map = new Map();
+  const add = (datum, ev) => {
+    if (datum < from || datum > to) return;
+    if (!map.has(datum)) map.set(datum, []);
+    map.get(datum).push(ev);
+  };
+  for (const e of eintraege) {
+    const b = byId.get(e.bereichId);
+    if (!b) continue;
+    const f = entryFacts(b, e);
+    const titel = entryTitle(b, e);
+    const netto = round2(f.einnahme - f.kosten);
+    if (f.faellig && netto) {
+      for (const d of occurrencesBetween(f.faellig, f.intervall, from, to, 60)) {
+        add(d, { art: 'zahlung', titel, betrag: netto, bereichId: b.id });
+      }
+    }
+    for (const fr of f.fristen) add(fr.datum, { art: 'frist', titel: `${titel}: ${fr.label}`, bereichId: b.id });
+  }
+  for (const fr of fristen) {
+    if (isISODate(fr.datum)) add(fr.datum, { art: 'frist', titel: fr.titel || 'Frist', erledigt: !!fr.erledigt, fristId: fr.id });
+  }
+  for (const n of notizen) {
+    if (isISODate(n.datum) && n.text) add(n.datum, { art: 'notiz', titel: n.text });
+  }
+  return map;
 }
