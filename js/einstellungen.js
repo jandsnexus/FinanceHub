@@ -49,7 +49,7 @@ export function renderEinstellungen(c) {
       section('logout', 'Abmelden', 'Meldet dich auf diesem Gerät ab. Beim nächsten Mal brauchst du E-Mail, Passwort und Tresor-Passwort.',
         btn('Abmelden', { variant: 'ghost-danger', iconName: 'logout', onClick: () => c.logout() }))
     ),
-    h('p', { class: 'footnote' }, 'FinanceHub · Version 1.1')
+    h('p', { class: 'footnote' }, 'FinanceHub · Version 1.2')
   );
 }
 
