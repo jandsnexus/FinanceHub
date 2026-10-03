@@ -1,24 +1,26 @@
-// Bilder: werden auf dem Gerät verkleinert, verschlüsselt und getrennt von den
-// normalen Daten gespeichert. Geladen wird ein Bild erst, wenn man es ansieht.
-import { db, doc, getDoc, getDocFromCache, setDoc, deleteDoc, serverTimestamp } from './firebase.js';
+// Bilder werden LOKAL auf dem Gerät gespeichert (IndexedDB im Browser), verschlüsselt
+// mit deinem Tresor-Schlüssel. Kein Cloud-Speicher, kein zusätzlicher Anbieter.
+// Hinweis: Ein Bild ist nur auf dem Gerät sichtbar, auf dem es hinzugefügt wurde.
 import { encryptBytes, decryptBytes } from './crypto.js';
 import { toast } from './ui.js';
 
 export const MAX_BILDER = 8;
 const ZIEL_BYTES = 450 * 1024;
+const DB_NAME = 'financehub-bilder';
+const STORE = 'bilder';
 let ctx = null;
 const urls = new Map();
-const pending = new Map();
 
 export function setFileContext(uid, key) {
   clearFileContext();
   ctx = { uid, key };
+  // Browser bitten, die Bilder nicht automatisch zu löschen, wenn Speicher knapp wird
+  navigator.storage?.persist?.().catch(() => {});
 }
 
 export function clearFileContext() {
   for (const u of urls.values()) URL.revokeObjectURL(u);
   urls.clear();
-  pending.clear();
   ctx = null;
 }
 
@@ -27,6 +29,34 @@ function need() {
   return ctx;
 }
 
+// ---- IndexedDB ----
+function openDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function tx(mode, fn) {
+  const db = await openDb();
+  try {
+    return await new Promise((resolve, reject) => {
+      const t = db.transaction(STORE, mode);
+      const req = fn(t.objectStore(STORE));
+      t.oncomplete = () => resolve(req?.result);
+      t.onerror = () => reject(t.error);
+      t.onabort = () => reject(t.error);
+    });
+  } finally {
+    db.close();
+  }
+}
+
+const dbKey = (uid, id) => `${uid}:${id}`;
+
+// ---- Verkleinern ----
 function loadImage(src) {
   return new Promise((resolve, reject) => {
     const img = new Image();
@@ -72,42 +102,39 @@ export async function compressImage(file) {
   }
 }
 
-export function saveImage(blob) {
+// ---- Speichern / Laden / Löschen ----
+export async function saveImage(blob) {
   const { uid, key } = need();
   const id = crypto.randomUUID();
+  const { iv, ct } = await encryptBytes(key, new Uint8Array(await blob.arrayBuffer()));
+  try {
+    await tx('readwrite', s => s.put({ iv, ct, mime: 'image/jpeg', savedAt: Date.now() }, dbKey(uid, id)));
+  } catch (err) {
+    console.error('Bild speichern fehlgeschlagen', err);
+    toast('Ein Bild konnte nicht gespeichert werden. Ist der Gerätespeicher voll?', 'danger');
+    throw err;
+  }
   urls.set(id, URL.createObjectURL(blob));
-  const p = blob.arrayBuffer()
-    .then(buf => encryptBytes(key, new Uint8Array(buf)))
-    .then(({ iv, ct }) => setDoc(doc(db, 'users', uid, 'files', id), { iv, ct, mime: 'image/jpeg', updatedAt: serverTimestamp() }))
-    .catch(err => {
-      console.error('Bild speichern fehlgeschlagen', err);
-      toast('Ein Bild konnte nicht gespeichert werden.', 'danger');
-    });
-  pending.set(id, p);
   return id;
 }
 
 export async function imageURL(id) {
   if (urls.has(id)) return urls.get(id);
   const { uid, key } = need();
-  const ref = doc(db, 'users', uid, 'files', id);
-  let snap;
-  try { snap = await getDocFromCache(ref); } catch { snap = null; }
-  if (!snap || !snap.exists()) snap = await getDoc(ref);
-  if (!snap.exists()) throw new Error('Bild nicht gefunden');
-  const d = snap.data();
-  const bytes = await decryptBytes(key, d.iv, d.ct);
-  const url = URL.createObjectURL(new Blob([bytes], { type: d.mime || 'image/jpeg' }));
+  const rec = await tx('readonly', s => s.get(dbKey(uid, id)));
+  if (!rec) throw new Error('Bild ist nur auf einem anderen Gerät gespeichert');
+  const bytes = await decryptBytes(key, rec.iv, rec.ct);
+  const url = URL.createObjectURL(new Blob([bytes], { type: rec.mime || 'image/jpeg' }));
   urls.set(id, url);
   return url;
 }
 
 export function deleteImage(id) {
-  const { uid } = need();
+  if (!ctx) return;
   const u = urls.get(id);
   if (u) URL.revokeObjectURL(u);
   urls.delete(id);
-  deleteDoc(doc(db, 'users', uid, 'files', id)).catch(err => console.warn('Bild löschen fehlgeschlagen', err));
+  tx('readwrite', s => s.delete(dbKey(ctx.uid, id))).catch(err => console.warn('Bild löschen fehlgeschlagen', err));
 }
 
 export function deleteImages(ids) {
