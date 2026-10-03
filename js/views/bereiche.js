@@ -1,10 +1,12 @@
-import { h, btn, fmtEUR, fmtDate, fmtNum, amountToInput, openModal, confirmDialog, toast, emptyState, nextId } from '../ui.js';
+import { h, btn, fmtEUR, fmtSigned, fmtDate, fmtNum, amountToInput, openModal, confirmDialog, toast, emptyState, nextId } from '../ui.js';
 import { icon } from '../icons.js';
 import {
   FIELD_TYPES, INTERVALS, BEREICH_ICONS, rolesFor, intervalLabel, coerceValue, entryTitle, entrySubtitle,
   validateBereich, sanitizeField, newFieldId
 } from '../schema.js';
-import { entryFacts, toMonthly, nextOccurrence, todayISO, round2 } from '../math.js';
+import { entryFacts, toMonthly, nextOccurrence, todayISO, round2, hasRole, saldoFieldId, kontoDeltas, kontoListe } from '../math.js';
+import { imageField, gallery } from './bilder.js';
+import { deleteImages } from '../files.js';
 
 // ---------- Anzeige-Helfer ----------
 function displayValue(field, v) {
@@ -19,8 +21,7 @@ function displayValue(field, v) {
 }
 
 function maskSecret(v) {
-  const s = String(v);
-  return '•••••• ' + s.slice(-4);
+  return '•••••• ' + String(v).slice(-4);
 }
 
 function secretValue(v) {
@@ -40,8 +41,15 @@ function secretValue(v) {
   return h('span', { class: 'secret-wrap' }, text, toggle, copy);
 }
 
-function amountLine(bereich, eintrag) {
+const isKontoBereich = b => hasRole(b, 'saldo');
+const zahltUeberKonto = b => !isKontoBereich(b) && (hasRole(b, 'kosten') || hasRole(b, 'einnahme'));
+
+function amountLine(bereich, eintrag, c) {
   const f = entryFacts(bereich, eintrag);
+  if (isKontoBereich(bereich)) {
+    const delta = kontoDeltas(c.snap.eintraege, c.snap.buchungen).get(eintrag.id) || 0;
+    return h('span', { class: 'row-right' }, h('span', { class: 'row-amount' }, fmtEUR(round2((f.saldo || 0) + delta))));
+  }
   if (f.kosten) {
     const monthly = toMonthly(f.kosten, f.intervall);
     return h('span', { class: 'row-right' },
@@ -53,8 +61,12 @@ function amountLine(bereich, eintrag) {
       h('span', { class: 'row-amount tone-success' }, '+ ' + fmtEUR(f.einnahme)),
       h('span', { class: 'row-sub' }, intervalLabel(f.intervall)));
   }
-  if (f.saldo !== null) return h('span', { class: 'row-right' }, h('span', { class: 'row-amount' }, fmtEUR(f.saldo)));
   return icon('chevronRight', 16);
+}
+
+export function deleteEntry(c, e) {
+  deleteImages(e.bilder);
+  c.store.remove(e.id);
 }
 
 // ---------- Bereichs-Übersicht (mobil: Tab "Bereiche") ----------
@@ -62,7 +74,7 @@ export function renderBereichList(c) {
   const list = c.snap.bereiche;
   return h('div', { class: 'stack-lg' },
     h('section', { class: 'hero' },
-      h('div', {}, h('h1', {}, 'Bereiche'), h('p', { class: 'muted' }, 'Alles, was du verwaltest. Du kannst jeden Bereich anpassen oder neue anlegen.')),
+      h('div', { class: 'hero-text' }, h('h1', {}, 'Bereiche'), h('p', { class: 'muted' }, 'Alles, was du verwaltest. Du kannst jeden Bereich anpassen oder neue anlegen.')),
       btn('Bereich', { variant: 'primary', iconName: 'plus', onClick: () => openBereichEditor(null, c) })),
     list.length
       ? h('div', { class: 'card' }, h('div', { class: 'tiles' }, list.map(b => {
@@ -95,7 +107,7 @@ export function renderBereichDetail(c, id) {
     h('section', { class: 'hero' },
       h('div', { class: 'hero-title' },
         h('span', { class: 'card-icon card-icon-lg' }, icon(b.icon || 'folder', 24)),
-        h('div', {}, h('h1', {}, b.name), h('p', { class: 'muted' }, `${entries.length} ${entries.length === 1 ? 'Eintrag' : 'Einträge'}`))),
+        h('div', { class: 'hero-text' }, h('h1', {}, b.name), h('p', { class: 'muted' }, `${entries.length} ${entries.length === 1 ? 'Eintrag' : 'Einträge'}`))),
       h('div', { class: 'hero-actions' },
         btn('Felder', { variant: 'secondary', iconName: 'edit', onClick: () => openBereichEditor(b, c) }),
         btn('Eintrag', { variant: 'primary', iconName: 'plus', onClick: () => openEntryForm(b, null, c) }))),
@@ -104,9 +116,14 @@ export function renderBereichDetail(c, id) {
       entries.length
         ? h('ul', { class: 'rows' }, entries.map(e => h('li', {},
           h('button', { type: 'button', class: 'row', onclick: () => openEntryDetail(b, e, c) },
-            h('span', { class: 'row-main' }, h('span', { class: 'row-title' }, entryTitle(b, e)),
-              entrySubtitle(b, e) ? h('span', { class: 'row-sub' }, entrySubtitle(b, e)) : null),
-            amountLine(b, e)))))
+            h('span', { class: 'row-main' },
+              h('span', { class: 'row-title' }, entryTitle(b, e)),
+              entrySubtitle(b, e) || (e.bilder && e.bilder.length)
+                ? h('span', { class: 'row-sub row-sub-icons' },
+                  entrySubtitle(b, e) ? h('span', { class: 'ellipsis' }, entrySubtitle(b, e)) : null,
+                  e.bilder && e.bilder.length ? h('span', { class: 'inline-icon' }, icon('image', 14), String(e.bilder.length)) : null)
+                : null),
+            amountLine(b, e, c)))))
         : emptyState(b.icon || 'folder', `Noch nichts in „${b.name}“.`,
           btn('Ersten Eintrag hinzufügen', { variant: 'primary', iconName: 'plus', onClick: () => openEntryForm(b, null, c) })))
   );
@@ -115,12 +132,22 @@ export function renderBereichDetail(c, id) {
 // ---------- Eintrag ansehen ----------
 export function openEntryDetail(b, e, c) {
   const facts = entryFacts(b, e);
+  const konten = new Map(kontoListe(c.snap.bereiche, c.snap.eintraege, c.snap.buchungen).map(k => [k.id, k]));
+  const saldoId = saldoFieldId(b);
+  const delta = kontoDeltas(c.snap.eintraege, c.snap.buchungen).get(e.id) || 0;
+
   const rows = b.fields.map(f => {
-    const v = e.values?.[f.id];
+    let v = e.values?.[f.id];
+    if (f.id === saldoId && (typeof v === 'number' || delta)) v = round2((typeof v === 'number' ? v : 0) + delta);
     const empty = v === null || v === undefined || v === '';
     return h('div', { class: 'kv' }, h('dt', {}, f.label),
       h('dd', {}, f.type === 'geheim' && !empty ? secretValue(v) : displayValue(f, v)));
   });
+  if (zahltUeberKonto(b)) {
+    const k = e.kontoId ? konten.get(e.kontoId) : null;
+    rows.push(h('div', { class: 'kv' }, h('dt', {}, 'Bezahlt über'), h('dd', {}, e.kontoId ? (k ? k.titel : 'Konto gelöscht') : '–')));
+  }
+
   const insights = [];
   if (facts.kosten) {
     const mon = toMonthly(facts.kosten, facts.intervall);
@@ -129,16 +156,34 @@ export function openEntryDetail(b, e, c) {
   if (facts.faellig) {
     const next = nextOccurrence(facts.faellig, facts.intervall, todayISO());
     if (next) insights.push(`Nächste Zahlung am ${fmtDate(next)}.`);
+    if (next && e.kontoId && konten.has(e.kontoId)) insights.push(`Wird am Fälligkeitstag automatisch von „${konten.get(e.kontoId).titel}“ abgebucht.`);
   }
+
+  let bewegungen = null;
+  if (isKontoBereich(b)) {
+    const list = c.snap.buchungen.filter(x => x.kontoId === e.id)
+      .sort((x, y) => String(y.datum).localeCompare(String(x.datum)) || String(y.createdAt || '').localeCompare(String(x.createdAt || '')))
+      .slice(0, 8);
+    bewegungen = h('div', { class: 'stack-sm' },
+      h('h3', { class: 'section-title' }, 'Letzte Bewegungen'),
+      list.length
+        ? h('ul', { class: 'rows' }, list.map(x => h('li', { class: 'row row-static' },
+          h('span', { class: 'row-main' }, h('span', { class: 'row-title' }, x.notiz || x.kategorie || 'Buchung'), h('span', { class: 'row-sub' }, fmtDate(x.datum))),
+          h('span', { class: `row-amount ${x.typ === 'einnahme' ? 'tone-success' : ''}` }, fmtSigned(x.typ === 'einnahme' ? x.betrag : -x.betrag)))))
+        : h('p', { class: 'hint' }, 'Noch keine Buchungen mit diesem Konto.'));
+  }
+
   const m = openModal({
     title: entryTitle(b, e),
     body: h('div', { class: 'stack' },
       insights.length ? h('div', { class: 'insight' }, icon('zap', 18), h('div', {}, insights.map(t => h('p', {}, t)))) : null,
-      h('dl', { class: 'kv-list' }, rows)),
+      h('dl', { class: 'kv-list' }, rows),
+      gallery(e.bilder),
+      bewegungen),
     footer: [
-      btn('Löschen', { variant: 'ghost-danger', iconName: 'trash', onClick: async () => {
+      btn('Löschen', { variant: 'ghost-danger', iconName: 'trash', collapse: true, onClick: async () => {
         if (await confirmDialog(`„${entryTitle(b, e)}“ wirklich löschen?`, { okText: 'Löschen', danger: true })) {
-          c.store.remove(e.id); m.close(); toast('Gelöscht');
+          deleteEntry(c, e); m.close(); toast('Gelöscht');
         }
       } }),
       btn('Bearbeiten', { variant: 'primary', iconName: 'edit', onClick: () => { m.close(); openEntryForm(b, e, c); } })
@@ -175,25 +220,54 @@ function controlFor(field, value, id) {
 export function openEntryForm(b, e, c) {
   const isNew = !e;
   const ids = {};
+  const saldoId = saldoFieldId(b);
+  const delta = e ? (kontoDeltas(c.snap.eintraege, c.snap.buchungen).get(e.id) || 0) : 0;
+  // Beim Kontostand den AKTUELLEN Stand anzeigen (inkl. Buchungen)
+  const shownSaldo = e && saldoId && (typeof e.values?.[saldoId] === 'number' || delta)
+    ? round2((typeof e.values?.[saldoId] === 'number' ? e.values[saldoId] : 0) + delta) : e?.values?.[saldoId];
+
   const rows = b.fields.map(f => {
     const id = ids[f.id] = nextId('fld');
     const label = f.required ? `${f.label} *` : f.label;
     const hint = f.role === 'kosten' ? 'Zählt zu deinen Fixkosten.'
       : f.role === 'einnahme' ? 'Zählt zu deinen festen Einnahmen.'
-        : f.role === 'saldo' ? 'Zählt zu deinem Gesamtvermögen.'
+        : f.role === 'saldo' ? 'Aktueller Stand. Buchungen mit diesem Konto verändern ihn automatisch.'
           : f.role === 'faellig' ? 'Ab hier rechnet die App die nächsten Zahlungen aus.'
             : f.role === 'frist' ? 'Erscheint bei deinen Fristen.' : null;
+    const value = f.id === saldoId ? shownSaldo : e?.values?.[f.id];
     return h('div', { class: 'field' },
       h('label', { for: id }, label),
-      controlFor(f, e?.values?.[f.id], id),
+      controlFor(f, value, id),
       hint ? h('p', { class: 'hint' }, hint) : null,
       h('p', { class: 'error', 'data-for': f.id }));
   });
+
+  // "Bezahlt über": welches Konto zahlt bzw. bekommt das Geld
+  let kontoSelect = null;
+  if (zahltUeberKonto(b)) {
+    const konten = kontoListe(c.snap.bereiche, c.snap.eintraege, c.snap.buchungen);
+    const kid = nextId('konto');
+    if (konten.length) {
+      const initial = e ? (e.kontoId || '') : (konten.length === 1 ? konten[0].id : '');
+      kontoSelect = h('select', { id: kid, class: 'input', value: initial },
+        h('option', { value: '' }, 'Kein Konto (nur anzeigen)'),
+        konten.map(k => h('option', { value: k.id }, `${k.titel} · ${fmtEUR(k.saldo)}`)));
+      rows.push(h('div', { class: 'field' }, h('label', { for: kid }, 'Bezahlt über Konto'), kontoSelect,
+        h('p', { class: 'hint' }, 'Am Fälligkeitstag wird der Betrag automatisch von diesem Konto abgebucht (bzw. gutgeschrieben).')));
+    } else {
+      rows.push(h('p', { class: 'hint hint-box' }, icon('bank', 16), h('span', {}, 'Tipp: Lege unter „Banken & Konten“ ein Konto an. Dann kannst du hier auswählen, von welchem Konto das Geld abgebucht wird.')));
+    }
+  }
+
+  const bilder = imageField(e?.bilder || []);
+  rows.push(bilder.el);
+
   const form = h('form', { class: 'stack', novalidate: true }, rows);
   const save = btn(isNew ? 'Hinzufügen' : 'Speichern', { variant: 'primary', type: 'submit' });
   save.setAttribute('form', form.id = nextId('form'));
+  let saved = false;
 
-  form.addEventListener('submit', ev => {
+  form.addEventListener('submit', async ev => {
     ev.preventDefault();
     const values = {};
     let firstError = null;
@@ -206,7 +280,32 @@ export function openEntryForm(b, e, c) {
       if (value !== null) values[f.id] = value;
     }
     if (firstError) { firstError.focus(); return; }
-    const data = { bereichId: b.id, values, createdAt: e?.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString() };
+    save.disabled = true;
+    const now = new Date().toISOString();
+    const data = {
+      bereichId: b.id, values,
+      createdAt: e?.createdAt || now, updatedAt: now,
+      saldoGesetztAm: e?.saldoGesetztAm || null,
+      kontoId: e?.kontoId || null, autoAb: e?.autoAb || null
+    };
+    // Kontostand: Nur wenn der Nutzer ihn geändert hat, gilt er als neuer Ausgangswert.
+    if (saldoId) {
+      const neu = values[saldoId];
+      const vorher = typeof shownSaldo === 'number' ? shownSaldo : null;
+      if (isNew || (neu ?? null) !== vorher) {
+        data.saldoGesetztAm = now;
+      } else {
+        if (typeof e.values?.[saldoId] === 'number') values[saldoId] = e.values[saldoId];
+        else delete values[saldoId];
+      }
+    }
+    if (kontoSelect) {
+      const neuKonto = kontoSelect.value || null;
+      if (neuKonto !== (e?.kontoId || null)) data.autoAb = neuKonto ? todayISO() : null;
+      data.kontoId = neuKonto;
+    }
+    data.bilder = await bilder.commit();
+    saved = true;
     c.store.save('eintrag', data, e?.id);
     m.close();
     toast(isNew ? 'Hinzugefügt' : 'Gespeichert', 'success');
@@ -215,7 +314,8 @@ export function openEntryForm(b, e, c) {
   const m = openModal({
     title: isNew ? `${b.name}: neuer Eintrag` : 'Eintrag bearbeiten',
     body: form,
-    footer: [btn('Abbrechen', { variant: 'ghost', onClick: () => m.close() }), save]
+    footer: [btn('Abbrechen', { variant: 'ghost', onClick: () => m.close() }), save],
+    onClose: () => { if (!saved) bilder.discard(); }
   });
   const first = form.querySelector('input, textarea, select');
   if (first && window.matchMedia('(pointer: fine)').matches) first.focus();
@@ -261,7 +361,7 @@ export function openBereichEditor(b, c) {
         opts = h('input', { class: 'input', type: 'text', value: (f.options || []).join(', '), placeholder: 'Möglichkeiten, mit Komma getrennt', 'aria-label': `Feld ${i + 1} Auswahlmöglichkeiten` });
         opts.addEventListener('input', () => { f.options = opts.value.split(',').map(s => s.trim()).filter(Boolean); });
       }
-      const move = (dir) => {
+      const move = dir => {
         const j = i + dir;
         if (j < 0 || j >= model.fields.length) return;
         [model.fields[i], model.fields[j]] = [model.fields[j], model.fields[i]];
@@ -294,11 +394,11 @@ export function openBereichEditor(b, c) {
   );
 
   const footer = [
-    !isNew ? btn('Bereich löschen', { variant: 'ghost-danger', iconName: 'trash', onClick: async () => {
+    !isNew ? btn('Bereich löschen', { variant: 'ghost-danger', iconName: 'trash', collapse: true, onClick: async () => {
       const count = c.store.eintraegeVon(b.id).length;
       const text = count ? `„${b.name}“ und alle ${count} Einträge darin werden gelöscht.` : `„${b.name}“ wird gelöscht.`;
       if (await confirmDialog(text, { okText: 'Endgültig löschen', danger: true })) {
-        c.store.eintraegeVon(b.id).forEach(e => c.store.remove(e.id));
+        c.store.eintraegeVon(b.id).forEach(e => deleteEntry(c, e));
         c.store.remove(b.id);
         m.close();
         toast('Bereich gelöscht');
