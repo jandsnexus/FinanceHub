@@ -2,12 +2,15 @@
 import * as store from './store.js';
 import { h, fmtDate } from './ui.js';
 import { icon } from './icons.js';
-import { summarize, todayISO } from './math.js';
+import { summarize, todayISO, faelligeAutoBuchungen } from './math.js';
+import { cycleTheme, effectiveTheme } from './theme.js';
+import { toast } from './ui.js';
 import { renderDashboard } from './views/dashboard.js';
 import { renderBereichList, renderBereichDetail, openBereichEditor } from './views/bereiche.js';
 import { renderBuchungen } from './views/buchungen.js';
 import { renderFristen } from './views/fristen.js';
 import { renderEinstellungen } from './views/einstellungen.js';
+import { openKalender } from './views/kalender.js';
 
 let state = null;
 
@@ -120,9 +123,16 @@ function render(routeChanged = false) {
     }
     main.append(content);
   }
+  const themeIcon = { hell: 'sun', dunkel: 'moon', pink: 'heart' }[effectiveTheme()] || 'sun';
   const topbar = h('header', { class: 'topbar' },
     h('div', { class: 'brand brand-mobile' }, h('span', { class: 'brand-mark' }), h('strong', {}, 'FinanceHub')),
-    h('span', { class: 'topbar-date' }, icon('calendar', 16), fmtDate(todayISO())),
+    h('button', { type: 'button', class: 'topbar-date', 'aria-label': 'Kalender öffnen', title: 'Kalender & Notizen', onclick: () => openKalender(ctx()) },
+      icon('calendar', 18), h('span', {}, fmtDate(todayISO()))),
+    h('button', { type: 'button', class: 'btn btn-ghost btn-icon', 'aria-label': 'Design wechseln', title: 'Design wechseln', onclick: () => {
+      const t = cycleTheme();
+      toast(`Design: ${t.label}`);
+      render(false);
+    } }, icon(themeIcon, 18)),
     h('button', { type: 'button', class: 'btn btn-ghost btn-icon topbar-lock', 'aria-label': 'Tresor sperren', onclick: () => state.lock() }, icon('lock', 18))
   );
   const layout = h('div', { class: 'layout' },
@@ -139,10 +149,23 @@ function render(routeChanged = false) {
 const onHash = () => render(true);
 const onNet = () => render(false);
 
+// Fällige Abbuchungen aus Verträgen automatisch buchen – erst wenn frische Daten vom Server da sind,
+// damit auf mehreren Geräten nichts doppelt oder trotz Löschen erneut gebucht wird.
+function autoBuchen() {
+  if (!store.isReady() || !store.isServerSynced() || !navigator.onLine) return;
+  const snap = store.snapshot();
+  const vorhanden = new Set(snap.alleBuchungen.map(b => b.id));
+  const neu = faelligeAutoBuchungen(snap.bereiche, snap.eintraege, vorhanden, todayISO());
+  if (!neu.length) return;
+  const now = new Date().toISOString();
+  for (const n of neu) store.save('buchung', { ...n.data, createdAt: now }, n.id);
+  toast(neu.length === 1 ? '1 fällige Zahlung wurde gebucht' : `${neu.length} fällige Zahlungen wurden gebucht`);
+}
+
 export function mountShell(root, { user, lock, logout }) {
   unmountShell();
   state = { root, user, lock, logout };
-  state.unsub = store.subscribe(() => render(false));
+  state.unsub = store.subscribe(() => { autoBuchen(); render(false); });
   window.addEventListener('hashchange', onHash);
   window.addEventListener('online', onNet);
   window.addEventListener('offline', onNet);
