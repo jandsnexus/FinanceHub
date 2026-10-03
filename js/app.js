@@ -1,6 +1,7 @@
 // Einstiegspunkt. Prüft zuerst die Konfiguration, damit nie ein leerer oder kaputter Bildschirm entsteht.
 import { firebaseConfig } from './config.js';
 import { h } from './ui.js';
+import { applyTheme } from './theme.js';
 
 const root = document.getElementById('app');
 
@@ -31,6 +32,7 @@ function registerServiceWorker() {
 }
 
 async function boot() {
+  applyTheme();
   if (!isConfigured(firebaseConfig)) {
     message('Einrichtung fehlt', 'Trage zuerst die Firebase-Konfiguration in js/config.js ein. Die Anleitung steht in der Datei ANLEITUNG.md.');
     return;
