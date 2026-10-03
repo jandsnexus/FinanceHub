@@ -1,10 +1,11 @@
+/* ===== Hell (Standard) ===== */
 :root {
   --bg: #F2F3F0;
   --surface: #FFFFFF;
   --surface-2: #F7F8F6;
   --ink: #1F2326;
   --ink-2: #5B6369;
-  --ink-3: #8A9196;
+  --ink-3: #80888D;
   --line: #E3E5E1;
   --line-2: #D3D7D2;
 
@@ -22,7 +23,9 @@
   --warning-soft: #FBF0D9;
   --danger: #B3372B;
   --danger-soft: #FBE8E5;
+  --note: #3D6FB6;
 
+  --backdrop: rgba(20, 26, 28, 0.42);
   --radius-sm: 8px;
   --radius: 12px;
   --radius-lg: 16px;
@@ -46,34 +49,41 @@
   color-scheme: light;
 }
 
+/* ===== Dunkel: automatisch (Gerät) oder manuell gewählt ===== */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #15191B;
-    --surface: #1D2225;
-    --surface-2: #232A2D;
-    --ink: #E7EAE8;
-    --ink-2: #A9B1B5;
-    --ink-3: #7E878C;
-    --line: #2C3437;
-    --line-2: #39434A;
-
-    --accent: #5FB8A2;
-    --accent-ink: #0F1B18;
-    --accent-soft: #1E3530;
-    --accent-hover: #74C7B2;
-
-    --in: #4DB895;
-    --out: #69747B;
-
-    --success: #6CC79C;
-    --success-soft: #1C3229;
-    --warning: #E2B460;
-    --warning-soft: #352B18;
-    --danger: #EE8A7E;
-    --danger-soft: #3A2220;
-
-    --shadow: none;
-    --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
+  :root:not([data-theme]) {
+    --bg: #15191B; --surface: #1D2225; --surface-2: #232A2D;
+    --ink: #E7EAE8; --ink-2: #A9B1B5; --ink-3: #8A9398; --line: #2C3437; --line-2: #3B464C;
+    --accent: #5FB8A2; --accent-ink: #0F1B18; --accent-soft: #1E3530; --accent-hover: #74C7B2;
+    --in: #4DB895; --out: #69747B;
+    --success: #6CC79C; --success-soft: #1C3229; --warning: #E2B460; --warning-soft: #352B18;
+    --danger: #EE8A7E; --danger-soft: #3A2220; --note: #8DB4F0;
+    --backdrop: rgba(0, 0, 0, 0.6); --shadow: none; --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
     color-scheme: dark;
   }
+}
+:root[data-theme="dunkel"] {
+  --bg: #15191B; --surface: #1D2225; --surface-2: #232A2D;
+  --ink: #E7EAE8; --ink-2: #A9B1B5; --ink-3: #8A9398; --line: #2C3437; --line-2: #3B464C;
+  --accent: #5FB8A2; --accent-ink: #0F1B18; --accent-soft: #1E3530; --accent-hover: #74C7B2;
+  --in: #4DB895; --out: #69747B;
+  --success: #6CC79C; --success-soft: #1C3229; --warning: #E2B460; --warning-soft: #352B18;
+  --danger: #EE8A7E; --danger-soft: #3A2220; --note: #8DB4F0;
+  --backdrop: rgba(0, 0, 0, 0.6); --shadow: none; --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
+}
+
+/* ===== Pink: nur andere Farben und eine rundere Schrift ===== */
+:root[data-theme="pink"] {
+  --bg: #FBEFF4; --surface: #FFFFFF; --surface-2: #FDF5F8;
+  --ink: #3B1F2C; --ink-2: #7A5465; --ink-3: #9C7A8A; --line: #F3DCE6; --line-2: #E9C6D5;
+  --accent: #C43C77; --accent-ink: #FFFFFF; --accent-soft: #FBE1EC; --accent-hover: #A82F63;
+  --in: #D9568E; --out: #E7C3D3;
+  --success: #2F8460; --success-soft: #E4F3EC; --warning: #9A5B12; --warning-soft: #FCEEDB;
+  --danger: #B8333F; --danger-soft: #FCE4E7; --note: #8A4FC2;
+  --backdrop: rgba(59, 31, 44, 0.38);
+  --shadow: 0 1px 2px rgba(196, 60, 119, 0.06), 0 1px 1px rgba(196, 60, 119, 0.04);
+  --shadow-lg: 0 12px 40px rgba(120, 30, 70, 0.18);
+  --font: ui-rounded, "SF Pro Rounded", -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  color-scheme: light;
 }
