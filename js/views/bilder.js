@@ -8,7 +8,12 @@ function thumbImg(id) {
   const tile = h('span', { class: 'thumb-media is-loading' }, img);
   imageURL(id)
     .then(url => { img.src = url; tile.classList.remove('is-loading'); })
-    .catch(() => { tile.classList.remove('is-loading'); tile.classList.add('is-missing'); tile.replaceChildren(icon('image', 20)); });
+    .catch(() => {
+      tile.classList.remove('is-loading');
+      tile.classList.add('is-missing');
+      tile.title = 'Dieses Bild ist auf einem anderen Gerät gespeichert';
+      tile.replaceChildren(icon('image', 20), h('small', {}, 'anderes Gerät'));
+    });
   return tile;
 }
 
@@ -20,7 +25,7 @@ export function openLightbox(ids, start = 0) {
   const next = h('button', { type: 'button', class: 'btn btn-secondary btn-icon', 'aria-label': 'Nächstes Bild' }, icon('chevronRight'));
   const show = () => {
     img.removeAttribute('src');
-    imageURL(ids[i]).then(url => { img.src = url; }).catch(() => toast('Bild konnte nicht geladen werden.', 'danger'));
+    imageURL(ids[i]).then(url => { img.src = url; }).catch(() => toast('Dieses Bild ist auf einem anderen Gerät gespeichert.'));
     counter.textContent = `${i + 1} von ${ids.length}`;
     prev.disabled = i === 0;
     next.disabled = i === ids.length - 1;
@@ -91,7 +96,7 @@ export function imageField(existing = []) {
   draw();
   return {
     el: h('div', { class: 'field' }, h('span', { class: 'label' }, 'Bilder'), grid, input,
-      h('p', { class: 'hint' }, 'Fotos werden automatisch verkleinert und verschlüsselt gespeichert.')),
+      h('p', { class: 'hint' }, 'Fotos werden verkleinert und verschlüsselt auf diesem Gerät gespeichert, nicht in der Cloud.')),
     busy: () => jobs.size > 0,
     // Speichert neue Bilder, löscht entfernte, gibt die endgültige Liste zurück.
     async commit() {
@@ -100,7 +105,9 @@ export function imageField(existing = []) {
       for (const it of items) {
         if (it.id) ids.push(it.id);
         else if (it.blob) {
-          ids.push(saveImage(it.blob));
+          try {
+            ids.push(await saveImage(it.blob));
+          } catch { /* Meldung kommt aus saveImage */ }
           URL.revokeObjectURL(it.url);
         }
       }
