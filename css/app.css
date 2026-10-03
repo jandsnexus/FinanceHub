@@ -421,3 +421,5 @@ dialog.modal::backdrop { background: rgba(20, 26, 28, 0.42); }
 .theme-dunkel .theme-swatch { background: linear-gradient(90deg, #15191B 60%, #5FB8A2 60%); }
 .theme-pink .theme-swatch { background: linear-gradient(90deg, #FBEFF4 60%, #C43C77 60%); }
 @media (max-width: 420px) { .theme-picker { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.thumb-media.is-missing { flex-direction: column; gap: 2px; display: flex; align-items: center; justify-content: center; text-align: center; padding: 4px; }
+.thumb-media.is-missing small { font-size: 10px; line-height: 1.2; }
