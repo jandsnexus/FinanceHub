@@ -3,6 +3,7 @@ import { icon } from '../icons.js';
 import * as vault from '../vault.js';
 import { rawFromPassword, rewrapPassword, passwordProblem } from '../crypto.js';
 import { todayISO } from '../math.js';
+import { THEMES, getTheme, setTheme } from '../theme.js';
 
 function section(iconName, title, text, ...actions) {
   return h('article', { class: 'card setting' },
@@ -19,6 +20,14 @@ export function renderEinstellungen(c) {
   return h('div', { class: 'stack-lg' },
     h('section', { class: 'hero' }, h('div', {}, h('h1', {}, 'Einstellungen'), h('p', { class: 'muted' }, c.user.email || ''))),
     h('section', { class: 'grid grid-2' },
+      h('article', { class: 'card setting' },
+        h('div', { class: 'card-head' }, h('span', { class: 'card-icon' }, icon('sun', 20)), h('h2', {}, 'Darstellung')),
+        h('p', { class: 'muted' }, 'Ändert nur das Aussehen auf diesem Gerät. Alle Funktionen und Daten bleiben gleich.'),
+        h('div', { class: 'theme-picker', role: 'radiogroup', 'aria-label': 'Design' }, THEMES.map(t =>
+          h('button', { type: 'button', role: 'radio', 'aria-checked': String(getTheme() === t.id),
+            class: `theme-choice theme-${t.id}${getTheme() === t.id ? ' active' : ''}`,
+            onclick: () => { setTheme(t.id); c.navigate('einstellungen'); } },
+          h('span', { class: 'theme-swatch' }), icon(t.icon, 18), h('span', {}, t.label))))),
       h('article', { class: 'card setting' },
         h('div', { class: 'card-head' }, h('span', { class: 'card-icon' }, icon('user', 20)), h('h2', {}, 'Profil')),
         h('div', { class: 'field' }, h('label', { for: nameId }, 'Dein Name (für die Begrüßung)'), nameInput),
@@ -40,7 +49,7 @@ export function renderEinstellungen(c) {
       section('logout', 'Abmelden', 'Meldet dich auf diesem Gerät ab. Beim nächsten Mal brauchst du E-Mail, Passwort und Tresor-Passwort.',
         btn('Abmelden', { variant: 'ghost-danger', iconName: 'logout', onClick: () => c.logout() }))
     ),
-    h('p', { class: 'footnote' }, 'FinanceHub · Version 1.0')
+    h('p', { class: 'footnote' }, 'FinanceHub · Version 1.2')
   );
 }
 
