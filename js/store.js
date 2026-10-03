@@ -4,7 +4,7 @@ import { db, collection, doc, onSnapshot, setDoc, deleteDoc, serverTimestamp } f
 import { encryptJSON, decryptJSON } from './crypto.js';
 import { toast } from './ui.js';
 
-export const KINDS = ['bereich', 'eintrag', 'buchung', 'frist', 'profil'];
+export const KINDS = ['bereich', 'eintrag', 'buchung', 'frist', 'profil', 'notiz'];
 
 const items = new Map();
 const subscribers = new Set();
@@ -13,6 +13,7 @@ let queue = Promise.resolve();
 let ready = false;
 let syncError = null;
 let scheduled = false;
+let serverSynced = false;
 
 function emit() {
   if (scheduled) return;
@@ -32,13 +33,16 @@ export function subscribe(fn) {
 
 export const isReady = () => ready;
 export const getSyncError = () => syncError;
+// true, sobald einmal frische Daten vom Server da waren (wichtig für automatische Abbuchungen)
+export const isServerSynced = () => serverSynced;
 
 export function start(uid, key) {
   stop();
   const gen = {};
   ctx = { uid, key, gen, unsub: null };
-  ctx.unsub = onSnapshot(collection(db, 'users', uid, 'items'), { includeMetadataChanges: false }, snap => {
+  ctx.unsub = onSnapshot(collection(db, 'users', uid, 'items'), { includeMetadataChanges: true }, snap => {
     const changes = snap.docChanges();
+    const fromServer = !snap.metadata?.fromCache;
     queue = queue.then(async () => {
       if (!ctx || ctx.gen !== gen) return;
       for (const ch of changes) {
@@ -56,6 +60,7 @@ export function start(uid, key) {
       }
       ready = true;
       syncError = null;
+      if (fromServer) serverSynced = true;
       emit();
     });
   }, err => {
@@ -71,6 +76,7 @@ export function stop() {
   ctx = null;
   items.clear();
   ready = false;
+  serverSynced = false;
   syncError = null;
   queue = Promise.resolve();
   emit();
@@ -137,8 +143,10 @@ export function snapshot() {
   return {
     bereiche: bereiche(),
     eintraege: all('eintrag'),
-    buchungen: all('buchung'),
-    fristen: all('frist')
+    buchungen: all('buchung').filter(b => !b.storniert),
+    alleBuchungen: all('buchung'),
+    fristen: all('frist'),
+    notizen: all('notiz')
   };
 }
 
