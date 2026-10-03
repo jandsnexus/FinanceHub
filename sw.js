@@ -1,6 +1,6 @@
 // Service Worker: macht die App offline nutzbar.
 // Bei jedem Update VERSION erhöhen, dann holen sich alle Geräte die neuen Dateien.
-const VERSION = 'v1.1.0';
+const VERSION = 'v1.2.0';
 const APP_CACHE = `financehub-app-${VERSION}`;
 const SDK_CACHE = 'financehub-sdk-10.12.2';
 
