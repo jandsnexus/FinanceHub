@@ -3,6 +3,8 @@ import { icon } from '../icons.js';
 import { fristStatus, todayISO, daysBetween } from '../math.js';
 import { isISODate } from '../schema.js';
 import { buildICS } from '../ics.js';
+import { imageField } from './bilder.js';
+import { deleteImages } from '../files.js';
 
 function exportIcs(f) {
   const ics = buildICS({ titel: f.titel, datum: f.datum, notiz: f.notiz || 'Erinnerung aus FinanceHub', uid: `${f.id}-${f.datum}@financehub` });
@@ -23,7 +25,10 @@ export function renderFristen(c) {
           onclick: () => { c.store.save('frist', { ...strip(own), erledigt: true }, own.id); toast('Erledigt', 'success'); } }, icon('check', 18))
         : h('span', { class: 'check-btn check-auto', title: 'Kommt aus einem Eintrag' }, icon('layers', 16)),
       h('button', { type: 'button', class: 'row', onclick: () => own ? openFristForm(own, c) : c.navigate('bereich/' + encodeURIComponent(f.bereichId)) },
-        h('span', { class: 'row-main' }, h('span', { class: 'row-title' }, f.titel), h('span', { class: 'row-sub' }, fmtDate(f.datum))),
+        h('span', { class: 'row-main' },
+          h('span', { class: 'row-title-line' }, h('span', { class: 'row-title' }, f.titel),
+            own && own.bilder && own.bilder.length ? h('span', { class: 'inline-icon' }, icon('image', 14)) : null),
+          h('span', { class: 'row-sub' }, fmtDate(f.datum))),
         badge(st.text, st.tone)),
       btn('', { variant: 'ghost', iconName: 'download', small: true, ariaLabel: 'In Kalender übernehmen', onClick: () => exportIcs(f) })
     );
@@ -65,17 +70,23 @@ export function openFristForm(f, c) {
   datum.addEventListener('input', updateInfo);
   updateInfo();
 
+  const bilder = imageField(f?.bilder || []);
   const form = h('form', { class: 'stack', novalidate: true, id: nextId('form') },
     h('div', { class: 'field' }, h('label', { for: ids.titel }, 'Was ist zu tun?'), titel),
     h('div', { class: 'field' }, h('label', { for: ids.datum }, 'Bis wann?'), datum, info),
     h('div', { class: 'field' }, h('label', { for: ids.notiz }, 'Notiz'), notiz),
+    bilder.el,
     err);
 
-  form.addEventListener('submit', e => {
+  let saved = false;
+  form.addEventListener('submit', async e => {
     e.preventDefault();
     if (!titel.value.trim()) { err.textContent = 'Bitte beschreibe die Frist.'; titel.focus(); return; }
     if (!isISODate(datum.value)) { err.textContent = 'Bitte ein Datum wählen.'; datum.focus(); return; }
-    c.store.save('frist', { titel: titel.value.trim(), datum: datum.value, notiz: notiz.value.trim(), erledigt: f?.erledigt || false }, f?.id);
+    save.disabled = true;
+    const bilderIds = await bilder.commit();
+    saved = true;
+    c.store.save('frist', { titel: titel.value.trim(), datum: datum.value, notiz: notiz.value.trim(), erledigt: f?.erledigt || false, bilder: bilderIds }, f?.id);
     m.close();
     toast(isNew ? 'Frist angelegt' : 'Gespeichert', 'success');
   });
@@ -86,13 +97,16 @@ export function openFristForm(f, c) {
     title: isNew ? 'Neue Frist' : 'Frist bearbeiten',
     body: form,
     footer: [
-      !isNew ? btn('Löschen', { variant: 'ghost-danger', iconName: 'trash', onClick: async () => {
-        if (await confirmDialog('Diese Frist löschen?', { okText: 'Löschen', danger: true })) { c.store.remove(f.id); m.close(); toast('Gelöscht'); }
+      !isNew ? btn('Löschen', { variant: 'ghost-danger', iconName: 'trash', collapse: true, onClick: async () => {
+        if (await confirmDialog('Diese Frist löschen?', { okText: 'Löschen', danger: true })) {
+          deleteImages(f.bilder); c.store.remove(f.id); saved = true; m.close(); toast('Gelöscht');
+        }
       } }) : null,
       !isNew && f.erledigt ? btn('Wieder öffnen', { variant: 'secondary', onClick: () => { c.store.save('frist', { ...strip(f), erledigt: false }, f.id); m.close(); } }) : null,
       btn('Abbrechen', { variant: 'ghost', onClick: () => m.close() }),
       save
-    ]
+    ],
+    onClose: () => { if (!saved) bilder.discard(); }
   });
   if (window.matchMedia('(pointer: fine)').matches) titel.focus();
 }
