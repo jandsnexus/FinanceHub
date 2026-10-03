@@ -26,10 +26,11 @@ function appendChildren(el, children) {
   }
 }
 
-export function btn(label, { variant = 'secondary', iconName, onClick, type = 'button', small, ariaLabel, disabled } = {}) {
+// collapse: auf schmalen Handys nur das Symbol zeigen (Text bleibt für Screenreader erhalten)
+export function btn(label, { variant = 'secondary', iconName, onClick, type = 'button', small, ariaLabel, disabled, collapse } = {}) {
   return h('button', {
-    type, class: `btn btn-${variant}${small ? ' btn-sm' : ''}${label ? '' : ' btn-icon'}`,
-    onclick: onClick, 'aria-label': ariaLabel || null, disabled: !!disabled
+    type, class: `btn btn-${variant}${small ? ' btn-sm' : ''}${label ? '' : ' btn-icon'}${collapse && iconName ? ' btn-collapse' : ''}`,
+    onclick: onClick, 'aria-label': ariaLabel || (collapse ? label : null), title: collapse ? label : null, disabled: !!disabled
   }, iconName ? icon(iconName, small ? 16 : 18) : null, label ? h('span', {}, label) : null);
 }
 
