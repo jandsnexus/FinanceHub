@@ -54,6 +54,11 @@ Im Projektordner: `python3 -m http.server 8000` → <http://localhost:8000>. `lo
 - **iPhone (Safari):** Seite öffnen → Teilen → „Zum Home-Bildschirm“.
 - **Android (Chrome):** Menü → „App installieren“.
 
+## Update auf Version 1.1 (Bilder, Kalender, Konten, Designs)
+
+1. Die geänderten und neuen Dateien auf GitHub ersetzen bzw. hinzufügen. **`js/config.js` NICHT ersetzen**, da stehen deine Firebase-Werte drin.
+2. **Wichtig:** Die neuen Regeln aus `firestore.rules` in Firebase unter Firestore → Regeln einfügen und veröffentlichen. Sonst können Bilder und Kalender-Notizen nicht gespeichert werden.
+
 ## Updates veröffentlichen
 
 1. Dateien ändern und hochladen.
