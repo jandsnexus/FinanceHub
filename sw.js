@@ -1,6 +1,6 @@
 // Service Worker: macht die App offline nutzbar.
 // Bei jedem Update VERSION erhöhen, dann holen sich alle Geräte die neuen Dateien.
-const VERSION = 'v1.0.0';
+const VERSION = 'v1.1.0';
 const APP_CACHE = `financehub-app-${VERSION}`;
 const SDK_CACHE = 'financehub-sdk-10.12.2';
 
@@ -14,6 +14,9 @@ const APP_FILES = [
   './icons/icon-192.png',
   './icons/icon-512.png',
   './icons/apple-touch-icon.png',
+  './js/theme-boot.js',
+  './js/theme.js',
+  './js/files.js',
   './js/app.js',
   './js/config.js',
   './js/firebase.js',
@@ -32,7 +35,9 @@ const APP_FILES = [
   './js/views/bereiche.js',
   './js/views/buchungen.js',
   './js/views/fristen.js',
-  './js/views/einstellungen.js'
+  './js/views/einstellungen.js',
+  './js/views/bilder.js',
+  './js/views/kalender.js'
 ];
 
 const SDK_PREFIX = 'https://www.gstatic.com/firebasejs/10.12.2/';
